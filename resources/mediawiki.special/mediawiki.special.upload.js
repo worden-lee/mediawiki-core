@@ -38,16 +38,21 @@
 		 * - Firefox 3.6+
 		 * - Chrome 7.something
 		 *
+		 * tableId and thumbnailId parameters must be properly escaped
+		 * HTML id attribute values.
+		 *
 		 * @todo check file size limits and warn of likely failures
 		 *
 		 * @param {File} file
+		 * @param {id} tableId ID of table element above which to insert the thumbnail
+		 * @param {id} thumbnailId ID to be given to thumbnail element
 		 */
-		function showPreview( file ) {
+		function showPreview( file, tableId, thumbnailId ) {
 			var $canvas,
 				ctx,
 				meta,
 				previewSize = 180,
-				thumb = $( '<div id="mw-upload-thumbnail" class="thumb tright">' +
+				thumb = $( '<div id="' + thumbnailId + '" class="thumb tright">' +
 							'<div class="thumbinner">' +
 								'<div class="mw-small-spinner" style="width: 180px; height: 180px"></div>' +
 								'<div class="thumbcaption"><div class="filename"></div><div class="fileinfo"></div></div>' +
@@ -59,7 +64,7 @@
 
 			$canvas = $('<canvas width="' + previewSize + '" height="' + previewSize + '" ></canvas>');
 			ctx = $canvas[0].getContext( '2d' );
-			$( '#mw-htmlform-source' ).parent().prepend( thumb );
+			$( '#' + tableId ).parent().prepend( thumb );
 
 			fetchPreview( file, function ( dataURL ) {
 				var img = new Image(),
@@ -136,7 +141,7 @@
 					info = mw.msg( 'widthheight', logicalWidth, logicalHeight ) +
 						', ' + prettySize( file.size );
 
-					$( '#mw-upload-thumbnail .fileinfo' ).text( info );
+					$( '#' + thumbnailId + ' .fileinfo' ).text( info );
 				};
 				img.src = dataURL;
 			}, mw.config.get( 'wgFileCanRotate' ) ? function ( data ) {
@@ -228,15 +233,27 @@
 
 		/**
 		 * Clear the file upload preview area.
+		 *
+		 * thumbnailId parameter must be a properly escaped
+		 * HTML id attribute value.
+		 *
+		 * @param {id} thumbnailId ID of thumbnail element to be removed
 		 */
-		function clearPreview() {
-			$( '#mw-upload-thumbnail' ).remove();
+		function clearPreview( thumbnailId ) {
+			$( '#' + thumbnailId ).remove();
 		}
 
 		/**
 		 * Check if the file does not exceed the maximum size
+		 *
+		 * fileId and errorId parameters must be properly escaped
+		 * HTML id attribute values.
+		 *
+		 * @param {File} file
+		 * @param {id} fileId ID of upload form field
+		 * @param {id} errorId ID of element to contain error output
 		 */
-		function checkMaxUploadSize( file ) {
+		function checkMaxUploadSize( file, fileId, errorId ) {
 			var maxSize, $error;
 
 			function getMaxUploadSize( type ) {
@@ -248,14 +265,14 @@
 				return sizes['*'];
 			}
 
-			$( '.mw-upload-source-error' ).remove();
+			$( '.' + errorId ).remove();
 
 			maxSize = getMaxUploadSize( 'file' );
 			if ( file.size > maxSize ) {
-				$error = $( '<p class="error mw-upload-source-error" id="wpSourceTypeFile-error">' +
+				$error = $( '<p class="error mw-upload-source-error" id="' + errorId + '">' +
 					mw.message( 'largefileserver', file.size, maxSize ).escaped() + '</p>' );
 
-				$( '#wpUploadFile' ).after( $error );
+				$( '#' + fileId ).after( $error );
 
 				return false;
 			}
@@ -263,28 +280,41 @@
 			return true;
 		}
 
-
 		/**
 		 * Initialization
+		 *
+		 * All parameters must be properly escaped
+		 * HTML id attribute values.
+		 *
+		 * @param {id} fileId ID of upload field
+		 * @param {id} thumbnailId ID of thumbnail element
+		 * @param {id} errorId ID of element where error output will appear
+		 * @param {id} tableId ID of table element above which thumbnail will be added
 		 */
-		if ( hasFileAPI() ) {
-			// Update thumbnail when the file selection control is updated.
-			$( '#wpUploadFile' ).change( function () {
-				clearPreview();
-				if ( this.files && this.files.length ) {
-					// Note: would need to be updated to handle multiple files.
-					var file = this.files[0];
+		window.setupThumbnail = function( fileId, thumbnailId, errorId, tableId ) {
+			if ( hasFileAPI() ) {
+				// Update thumbnail when the file selection control is updated.
+				$( '#'+fileId ).change( function() {
+					clearPreview( thumbnailId );
+					if ( this.files && this.files.length ) {
+						// Note: would need to be updated to handle multiple files.
+						var file = this.files[0];
 
-					if ( !checkMaxUploadSize( file ) ) {
-						return;
-					}
+						if ( !checkMaxUploadSize( file, fileId,
+						       errorId ) ) {
+							return;
+						}
 
-					if ( fileIsPreviewable( file ) ) {
-						showPreview( file );
+						if ( fileIsPreviewable( file ) ) {
+							showPreview( file, tableId,
+								thumbnailId );
+						}
 					}
-				}
-			} );
-		}
+				} );
+			}
+		};
+		window.setupThumbnail( 'wpUploadFile', 'mw-upload-thumbnail',
+				'wpSourceTypeFile-error', 'mw-htmlform-source' );
 	} );
 
 	/**

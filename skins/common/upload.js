@@ -2,25 +2,54 @@
 var	ajaxUploadDestCheck = mw.config.get( 'wgAjaxUploadDestCheck' ),
 	fileExtensions = mw.config.get( 'wgFileExtensions' );
 
-window.licenseSelectorCheck = function() {
-	var selector = document.getElementById( "wpLicense" );
-	var selection = selector.options[selector.selectedIndex].value;
-	if( selector.selectedIndex > 0 ) {
-		if( selection == "" ) {
-			// Option disabled, but browser is broken and doesn't respect this
-			selector.selectedIndex = 0;
+
+/**
+ * onchange function to show a preview when license selector is changed
+ *
+ * All parameters must be properly escaped
+ * HTML id attribute values.
+ *
+ * @param {string} licenseId ID of license selector field
+ * @param {string} destFileId ID of destination filename field
+ * @param {string} previewId ID of element where license preview goes
+ */
+window.licenseSelectorCheck = function( licenseId, destFileId, previewId ) {
+	return function() {
+		var selector = document.getElementById( licenseId );
+		var selection = selector.options[selector.selectedIndex].value;
+		if( selector.selectedIndex > 0 ) {
+			if( selection == "" ) {
+				// Option disabled, but browser is broken and doesn't respect this
+				selector.selectedIndex = 0;
+			}
 		}
-	}
-	// We might show a preview
-	wgUploadLicenseObj.fetchPreview( selection );
+		// We might show a preview
+		wgUploadLicenseObj.fetchPreview( selection, licenseId, destFileId, previewId );
+	};
 };
 
-function uploadSetup() {
+/**
+ * Insert event handlers, empty elements, generally get form ready for 
+ * the dynamics operations we're going to do when data is entered.
+ *
+ * All parameters must be properly escaped
+ * HTML id attribute values.
+ *
+ * @param {string} sourceTypeId ID of the source-file type radio-button field
+ * @param {string} uploadUrlId ID of copy-from-URL text field
+ * @param {string} licenseId ID of license selector field
+ * @param {string} warningId ID to attach to table row where warnings will go
+ * @param {string} ackId Id of hidden field recording that warning was acknowledged
+ * @param {string} destFileId ID of destination filename field
+ * @param {string} descriptionId ID of file-description text field
+ * @param {string} previewId ID of element where license preview goes
+ */
+window.uploadSetupByIds = function( sourceTypeId, uploadUrlId, licenseId, warningId, ackId, destFileId, descriptionId, previewId ) {
 	// Disable URL box if the URL copy upload source type is not selected
-	var e = document.getElementById( 'wpSourceTypeurl' );
+	var e = document.getElementById( sourceTypeId );
 	if( e ) {
 		if( !e.checked ) {
-			var ein = document.getElementById( 'wpUploadFileURL' );
+			var ein = document.getElementById( uploadUrlId );
 			if(ein)
 				ein.setAttribute( 'disabled', 'disabled' );
 		}
@@ -28,7 +57,7 @@ function uploadSetup() {
 
 	// For MSIE/Mac: non-breaking spaces cause the <option> not to render.
 	// But for some reason, setting the text to itself works
-	var selector = document.getElementById("wpLicense");
+	var selector = document.getElementById( licenseId );
 	if (selector) {
 		var ua = navigator.userAgent;
 		var isMacIe = (ua.indexOf("MSIE") != -1) && (ua.indexOf("Mac") != -1);
@@ -43,24 +72,35 @@ function uploadSetup() {
 	if ( ajaxUploadDestCheck ) {
 		// Insert an event handler that fetches upload warnings when wpDestFile
 		// has been changed
-		document.getElementById( 'wpDestFile' ).onchange = function ( e ) {
-			wgUploadWarningObj.checkNow(this.value);
-		};
+		var ackElt = document.getElementsByName( ackId );
+		var destElt = document.getElementById( destFileId );
+		if( destElt ) 
+			destElt.onchange = function ( e ) {
+				wgUploadWarningObj.checkNow(this, warningId, ackElt);
+			};
 		// Insert a row where the warnings will be displayed just below the
 		// wpDestFile row
-		var optionsTable = document.getElementById( 'mw-htmlform-description' ).tBodies[0];
-		var row = optionsTable.insertRow( 1 );
-		var td = document.createElement( 'td' );
-		td.id = 'wpDestFile-warning';
-		td.colSpan = 2;
+		var descElt = document.getElementById( descriptionId )
+		if( descElt && destElt ) {
+			var destFileRow = destElt.parentNode.parentNode;
+			var destFileTbody = destFileRow.parentNode;
 
-		row.appendChild( td );
+			var optionsTable = descElt.tBodies[0];
+			//var row = optionsTable.insertRow( 1 );
+			var row = document.createElement( 'tr' );
+			var td = document.createElement( 'td' );
+			td.id = warningId;
+			td.colSpan = 2;
+
+			row.appendChild( td );
+			destFileTbody.insertBefore( row, destFileRow.nextSibling );
+		}
 	}
 
-	var wpLicense = document.getElementById( 'wpLicense' );
+	var wpLicense = document.getElementById( licenseId );
 	if ( mw.config.get( 'wgAjaxLicensePreview' ) && wpLicense ) {
 		// License selector check
-		wpLicense.onchange = licenseSelectorCheck;
+		wpLicense.onchange = licenseSelectorCheck( licenseId, destFileId, previewId );
 
 		// License selector table row
 		var wpLicenseRow = wpLicense.parentNode.parentNode;
@@ -70,23 +110,34 @@ function uploadSetup() {
 		var td = document.createElement( 'td' );
 		row.appendChild( td );
 		td = document.createElement( 'td' );
-		td.id = 'mw-license-preview';
+		td.id = previewId;
 		row.appendChild( td );
 
 		wpLicenseTbody.insertBefore( row, wpLicenseRow.nextSibling );
 	}
+};
 
+/**
+ * call uploadSetupByIds and do a bit of extra setup
+ */
+function uploadSetup() {
+	uploadSetupByIds( 'wpSourceTypeurl', 'wpUploadFileURL', 'wpLicense', 'wpDestFile-warning', 'wpDestFileWarningAck', 'wpDestFile', 'mw-htmlform-description', 'mw-license-preview' );
 
 	// fillDestFile setup
 	var	i,
 		uploadSourceIds = mw.config.get( 'wgUploadSourceIds' ),
-		len = uploadSourceIds.length;
+		len = Array.isArray(uploadSourceIds) ? uploadSourceIds.length : 0;
+	var upUrl = document.getElementById( 'wpUploadFileURL' );
+	var destFile = document.getElementById( 'wpDestFile' );
+	var upperm = document.getElementById( 'mw-upload-permitted' );
+	var uppro = document.getElementById( 'mw-upload-prohibited' );
+	var warningId = 'wpDestFile-warning';
+	var ackElt = document.getElementsByName( 'wpDestFileWarningAck' );
 	for ( i = 0; i < len; i += 1 )
 		document.getElementById( uploadSourceIds[i] ).onchange = function (e) {
-			fillDestFilename( this.id );
-		};
-};
-
+			fillDestFilename( this, upUrl, destFile, upperm, uppro, warningId, ackElt, 'wgUploadAutoFill' );
+		}
+}
 
 window.wgUploadWarningObj = {
 	'responseCache' : { '' : '&nbsp;' },
@@ -95,43 +146,18 @@ window.wgUploadWarningObj = {
 	'delay': 500, // ms
 	'timeoutID': false,
 
-	'keypress': function () {
-		if ( !ajaxUploadDestCheck || !sajax_init_object() ) return;
-
-		// Find file to upload
-		var destFile = document.getElementById('wpDestFile');
-		var warningElt = document.getElementById( 'wpDestFile-warning' );
-		if ( !destFile || !warningElt ) return ;
-
-		this.nameToCheck = destFile.value ;
-
-		// Clear timer
-		if ( this.timeoutID ) {
-			window.clearTimeout( this.timeoutID );
-		}
-		// Check response cache
-		for (cached in this.responseCache) {
-			if (this.nameToCheck == cached) {
-				this.setWarning(this.responseCache[this.nameToCheck]);
-				return;
-			}
-		}
-
-		this.timeoutID = window.setTimeout( 'wgUploadWarningObj.timeout()', this.delay );
-	},
-
-	'checkNow': function (fname) {
+	'checkNow': function (field, warningId, ackElt) {
 		if ( !ajaxUploadDestCheck || !sajax_init_object() ) return;
 		if ( this.timeoutID ) {
 			window.clearTimeout( this.timeoutID );
 		}
-		this.nameToCheck = fname;
-		this.timeout();
+		this.nameToCheck = field.value;
+		this.timeout(field, warningId, ackElt);
 	},
 
-	'timeout' : function() {
+	'timeout' : function(field, warningId, ackElt) {
 		if ( !ajaxUploadDestCheck || !sajax_init_object() ) return;
-		injectSpinner( document.getElementById( 'wpDestFile' ), 'destcheck' );
+		injectSpinner( field, 'destcheck' );
 
 		// Get variables into local scope so that they will be preserved for the
 		// anonymous callback. fileName is copied so that multiple overlapping
@@ -140,22 +166,19 @@ window.wgUploadWarningObj = {
 		var fileName = this.nameToCheck;
 		sajax_do_call( 'SpecialUpload::ajaxGetExistsWarning', [this.nameToCheck],
 			function (result) {
-				obj.processResult(result, fileName)
+				obj.processResult(result, fileName, warningId, ackElt)
 			}
 		);
 	},
 
-	'processResult' : function (result, fileName) {
+	'processResult' : function (result, fileName, warningId, ackElt) {
 		removeSpinner( 'destcheck' );
-		this.setWarning(result.responseText);
+		this.setWarning(result.responseText, warningId, ackElt);
 		this.responseCache[fileName] = result.responseText;
 	},
 
-	'setWarning' : function (warning) {
-		var warningElt = document.getElementById( 'wpDestFile-warning' );
-		var ackElt = document.getElementsByName( 'wpDestFileWarningAck' );
-
-		this.setInnerHTML(warningElt, warning);
+	'setWarning' : function (warning, warningId, ackElt) {
+		this.setInnerHTML(warningId, warning);
 
 		// Set a value in the form indicating that the warning is acknowledged and
 		// doesn't need to be redisplayed post-upload
@@ -166,7 +189,8 @@ window.wgUploadWarningObj = {
 		}
 
 	},
-	'setInnerHTML' : function (element, text) {
+	'setInnerHTML' : function (id, text) {
+		var element = document.getElementById( id );
 		// Check for no change to avoid flicker in IE 7
 		if (element.innerHTML != text) {
 			element.innerHTML = text;
@@ -174,21 +198,33 @@ window.wgUploadWarningObj = {
 	}
 };
 
-window.fillDestFilename = function(id) {
-	if ( !mw.config.get( 'wgUploadAutoFill' ) ) {
-		return;
-	}
-	if (!document.getElementById) {
+/**
+ * Autofill the destination filename with a guess built from the source 
+ * filename.  This is called when either the source-file or source-url is
+ * updated.
+ *
+ * warningId parameter must be a properly escaped HTML id attribute value.
+ *
+ * @param {HTMLElement} upFile source-file element
+ * @param {HTMLElement} upUrl source-url element
+ * @param {HTMLElement} destFile destination-filename element
+ * @param {HTMLElement} upperm element where upload permissions errors go
+ * @param {HTMLElement} uppro element where upload-prohibited messages go
+ * @param {string} warningId Id of element where upload warnings will go
+ * @param {HTMLElement} ackElt hidden form field recording acknowledgement of warnings
+ * @param {string} configvar name of mw.config variable controlling whether to do auto-filling
+ */
+window.fillDestFilename = function(upFile, upUrl, destFile, upperm, uppro, warningId, ackElt, configvar) {
+	// e.g. mw.config.get( 'wgUploadAutoFill' )
+	if ( !mw.config.get( configvar ) ) {
 		return;
 	}
 	// Remove any previously flagged errors
-	var e = document.getElementById( 'mw-upload-permitted' );
-	if( e ) e.className = '';
+	if( upperm ) upperm.className = '';
 
-	var e = document.getElementById( 'mw-upload-prohibited' );
-	if( e ) e.className = '';
+	if( uppro ) uppro.className = '';
 
-	var path = document.getElementById(id).value;
+	var path = upFile.value;
 	// Find trailing part
 	var slash = path.lastIndexOf('/');
 	var backslash = path.lastIndexOf('\\');
@@ -204,7 +240,7 @@ window.fillDestFilename = function(id) {
 	// Clear the filename if it does not have a valid extension.
 	// URLs are less likely to have a useful extension, so don't include them in the
 	// extension check.
-	if ( mw.config.get( 'wgStrictFileExtensions' ) && fileExtensions && id !== 'wpUploadFileURL' ) {
+	if ( upUrl && mw.config.get( 'wgStrictFileExtensions' ) && fileExtensions && upFile.id !== upUrl.id ) {
 		var found = false;
 		if ( fname.lastIndexOf( '.' ) !== -1 ) {
 			var ext = fname.substr( fname.lastIndexOf( '.' ) + 1 );
@@ -218,17 +254,11 @@ window.fillDestFilename = function(id) {
 		if( !found ) {
 			// Not a valid extension
 			// Clear the upload and set mw-upload-permitted to error
-			document.getElementById(id).value = '';
-			var e = document.getElementById( 'mw-upload-permitted' );
-			if( e ) e.className = 'error';
-
-			var e = document.getElementById( 'mw-upload-prohibited' );
-			if( e ) e.className = 'error';
-
+			upFile.value = '';
+			if( upperm ) upperm.className = 'error';
+			if( uppro ) uppro.className = 'error';
 			// Clear wpDestFile as well
-			var e = document.getElementById( 'wpDestFile' );
-			if( e ) e.value = '';
-
+			if( destFile ) destFile.value = '';
 			return false;
 		}
 	}
@@ -241,7 +271,6 @@ window.fillDestFilename = function(id) {
 	}
 
 	// Output result
-	var destFile = document.getElementById( 'wpDestFile' );
 	if ( destFile ) {
 		// Call decodeURIComponent function to remove possible URL-encoded characters
 		// from the file name (bug 30390). Especially likely with upload-form-url.
@@ -251,7 +280,7 @@ window.fillDestFilename = function(id) {
 		} catch ( e ) {
 			destFile.value = fname;
 		}
-		wgUploadWarningObj.checkNow( fname );
+		wgUploadWarningObj.checkNow(destFile, warningId, ackElt) ;
 	}
 };
 
@@ -266,7 +295,7 @@ window.wgUploadLicenseObj = {
 
 	'responseCache' : { '' : '' },
 
-	'fetchPreview': function( license ) {
+	'fetchPreview': function( license, licenseId, destFileId, previewId ) {
 		if ( !mw.config.get( 'wgAjaxLicensePreview' ) ) return;
 		for (cached in this.responseCache) {
 			if (cached == license) {
@@ -274,9 +303,9 @@ window.wgUploadLicenseObj = {
 				return;
 			}
 		}
-		injectSpinner( document.getElementById( 'wpLicense' ), 'license' );
+		injectSpinner( document.getElementById( licenseId ), 'license' );
 
-		var title = document.getElementById('wpDestFile').value;
+		var title = document.getElementById( destFileId ).value;
 		if ( !title ) title = 'File:Sample.jpg';
 
 		var url = mw.util.wikiScript( 'api' )
@@ -287,20 +316,20 @@ window.wgUploadLicenseObj = {
 		var req = sajax_init_object();
 		req.onreadystatechange = function() {
 			if ( req.readyState == 4 && req.status == 200 )
-				wgUploadLicenseObj.processResult( eval( '(' + req.responseText + ')' ), license );
+				wgUploadLicenseObj.processResult( eval( '(' + req.responseText + ')' ), license, previewId );
 		};
 		req.open( 'GET', url, true );
 		req.send( '' );
 	},
 
-	'processResult' : function( result, license ) {
+	'processResult' : function( result, license, previewId ) {
 		removeSpinner( 'license' );
 		this.responseCache[license] = result['parse']['text']['*'];
-		this.showPreview( this.responseCache[license] );
+		this.showPreview( this.responseCache[license], previewId );
 	},
 
-	'showPreview' : function( preview ) {
-		var previewPanel = document.getElementById( 'mw-license-preview' );
+	'showPreview' : function( preview, previewId ) {
+		var previewPanel = document.getElementById( previewId );
 		if( previewPanel.innerHTML != preview )
 			previewPanel.innerHTML = preview;
 	}
